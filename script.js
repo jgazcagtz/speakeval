@@ -17,17 +17,18 @@ class SpeakEvalApp {
         this.isSpeaking = false;
         this.audioQueue = [];
         
-        // Conversation State
+        // Evaluation State
         this.evaluationStep = 0;
         this.totalSteps = 5;
         this.conversationHistory = [];
+        this.userResponses = [];
         this.conversationPhase = 'initial'; // 'initial' | 'evaluation' | 'complete'
         
         this.init();
     }
     
     init() {
-        // Event Listeners
+        // Initialize Event Listeners
         this.micButton.addEventListener('click', () => this.toggleSpeechRecognition());
         this.themeToggle.addEventListener('click', () => this.toggleTheme());
         
@@ -35,7 +36,7 @@ class SpeakEvalApp {
             btn.addEventListener('click', () => this.setLanguage(btn.dataset.lang));
         });
         
-        // Check for Speech Recognition Support
+        // Check Browser Support
         if (!this.SpeechRecognition) {
             this.showUnsupportedMessage('Speech recognition not supported. Please use Chrome or Edge.');
             this.micButton.disabled = true;
@@ -48,7 +49,7 @@ class SpeakEvalApp {
     }
     
     startConversation() {
-        const welcomeMessage = "Hello! I'm SpeakEval Pro. Let's begin your English evaluation. Please introduce yourself (your name, background, and experience).";
+        const welcomeMessage = "Welcome to your English evaluation. Let's begin with your introduction. Please say: 'My name is [name], I'm a [occupation]'";
         this.addMessage('ai', welcomeMessage);
         this.speakResponse(welcomeMessage);
     }
@@ -86,6 +87,7 @@ class SpeakEvalApp {
     
     async processUserResponse(transcript) {
         this.addMessage('user', transcript);
+        this.userResponses.push(transcript);
         this.showTypingIndicator();
         
         try {
@@ -94,69 +96,101 @@ class SpeakEvalApp {
                 this.conversationPhase = 'evaluation';
             }
             
-            const evaluation = await this.getAIResponse(transcript);
-            this.removeTypingIndicator();
-            
-            if (!evaluation?.message) {
-                throw new Error('Invalid evaluation response');
+            let response;
+            if (this.evaluationStep < this.totalSteps - 1) {
+                // Mid-conversation: Get next question
+                response = await this.getConversationResponse(transcript);
+            } else {
+                // Final step: Get complete evaluation
+                response = await this.getFinalEvaluation();
             }
             
-            this.addMessage('ai', evaluation.message);
-            await this.speakResponse(evaluation.message);
+            this.removeTypingIndicator();
+            
+            if (!response?.message) {
+                throw new Error('Invalid response from server');
+            }
+            
+            this.addMessage('ai', response.message);
+            await this.speakResponse(response.message);
             
             if (this.conversationPhase === 'evaluation') {
                 this.evaluationStep++;
                 this.updateProgress();
                 
                 if (this.evaluationStep < this.totalSteps) {
-                    // Add delay before next question
+                    // Add slight delay before next question
                     setTimeout(() => {
                         const nextQuestion = this.getNextQuestion();
                         this.addMessage('ai', nextQuestion);
                         this.speakResponse(nextQuestion);
-                    }, 1000);
+                    }, 800);
                 } else {
-                    this.completeEvaluation();
+                    this.conversationPhase = 'complete';
                 }
             }
         } catch (error) {
-            console.error('Evaluation error:', error);
+            console.error('Error processing response:', error);
             this.removeTypingIndicator();
-            this.addSystemMessage('Evaluation error. Please try again.');
+            this.addSystemMessage('Error processing your response. Please try again.');
         }
     }
     
     getNextQuestion() {
         const questions = [
-            "Now, please describe your current or most recent job responsibilities.",
-            "Next, tell me about a professional challenge you faced.",
-            "Please share your future career goals.",
-            "Finally, discuss a current trend in your industry."
+            "Now describe your daily work activities.",
+            "Tell me about a professional challenge you've faced.",
+            "What are your career goals for the next 5 years?",
+            "Discuss a recent trend in your industry."
         ];
         return questions[this.evaluationStep - 1];
     }
     
-    async getAIResponse(userMessage) {
-        const systemPrompt = this.conversationPhase === 'initial'
-            ? "You are SpeakEval Pro, an AI English speaking assessment tool. Welcome the user and ask them to introduce themselves."
-            : `You are SpeakEval Pro evaluating English speaking skills. Provide feedback on:
-              1. Pronunciation (0-10)
-              2. Fluency (0-10) 
-              3. Grammar (0-10)
-              4. Vocabulary (0-10)
-              5. Comprehension (0-10)
-              Then continue the evaluation.`;
-        
-        this.conversationHistory.push({
-            role: 'user',
-            content: userMessage
-        });
-        
+    async getConversationResponse(userMessage) {
         const messages = [
-            { role: 'system', content: systemPrompt },
-            ...this.conversationHistory
+            {
+                role: 'system',
+                content: `You are conducting an English evaluation. Respond conversationally to continue the assessment. 
+                Guidelines:
+                1. Keep responses under 20 words
+                2. Do NOT evaluate yet
+                3. Just acknowledge and ask the next question
+                4. Maintain professional tone`
+            },
+            {
+                role: 'user',
+                content: userMessage
+            }
         ];
         
+        return this.callAPI(messages);
+    }
+    
+    async getFinalEvaluation() {
+        const messages = [
+            {
+                role: 'system',
+                content: `Generate a comprehensive CEFR-aligned English evaluation report based on these responses:
+                ${JSON.stringify(this.userResponses)}
+                
+                Requirements:
+                1. Determine CEFR level (A1-C2) with confidence percentage
+                2. Evaluate these skills:
+                   - Pronunciation
+                   - Fluency
+                   - Grammar
+                   - Vocabulary
+                   - Discourse
+                3. Provide specific examples from their responses
+                4. Suggest 3 improvement areas
+                5. Format with markdown headings`
+            }
+        ];
+        
+        return this.callAPI(messages);
+    }
+    
+    async callAPI(messages) {
         try {
             const response = await fetch('/api/eval', {
                 method: 'POST',
@@ -166,19 +200,13 @@ class SpeakEvalApp {
             
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || 'Evaluation failed');
+                console.error('API Error:', errorData);
+                throw new Error(errorData.error || 'API request failed');
             }
             
-            const data = await response.json();
-            
-            this.conversationHistory.push({
-                role: 'assistant',
-                content: data.message
-            });
-            
-            return data;
+            return await response.json();
         } catch (error) {
-            console.error('API Error:', error);
+            console.error('API Call Error:', error);
             throw error;
         }
     }
@@ -202,7 +230,9 @@ class SpeakEvalApp {
                 })
             });
 
-            if (!response.ok) throw new Error('TTS request failed');
+            if (!response.ok) {
+                throw new Error('TTS request failed');
+            }
 
             const audioBlob = await response.blob();
             const audioUrl = URL.createObjectURL(audioBlob);
@@ -224,24 +254,6 @@ class SpeakEvalApp {
             this.isSpeaking = false;
             this.addSystemMessage('Voice feature unavailable. Please check connection.');
         }
-    }
-    
-    completeEvaluation() {
-        this.conversationPhase = 'complete';
-        const report = `📊 Evaluation Complete!
-        
-        Pronunciation: 8/10
-        Fluency: 7/10  
-        Grammar: 9/10
-        Vocabulary: 8/10
-        Comprehension: 9/10
-        
-        Overall: 41/50 (Advanced)`;
-        
-        setTimeout(() => {
-            this.addMessage('ai', report);
-            this.speakResponse(report);
-        }, 1500);
     }
     
     updateProgress() {
