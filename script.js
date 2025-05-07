@@ -123,14 +123,14 @@ class SpeakEvalApp {
                 this.conversationPhase = 'evaluation';
             }
             
-            let response;
-            if (this.evaluationStep < this.totalSteps - 1) {
-                // Mid-conversation: Get next question
-                response = await this.getConversationResponse(transcript);
-            } else {
-                // Final step: Get complete evaluation
-                response = await this.getFinalEvaluation();
-            }
+            // Prepare conversation history for API
+            const messages = [
+                ...this.conversationHistory,
+                { role: 'user', content: transcript }
+            ];
+            
+            // Call API with current state
+            const response = await this.callAPI(messages, this.evaluationStep, this.totalSteps);
             
             this.removeTypingIndicator();
             
@@ -138,22 +138,33 @@ class SpeakEvalApp {
                 throw new Error('Invalid response from server');
             }
             
+            // Add AI response to conversation history
             this.addMessage('ai', response.message);
+            this.conversationHistory.push(
+                { role: 'user', content: transcript },
+                { role: 'assistant', content: response.message }
+            );
+            
             await this.speakResponse(response.message);
             
             if (this.conversationPhase === 'evaluation') {
                 this.evaluationStep++;
                 this.updateProgress();
                 
-                if (this.evaluationStep < this.totalSteps) {
-                    // Add slight delay before next question
+                if (!response.isFinal) {
+                    // Continue conversation
                     setTimeout(() => {
                         const nextQuestion = this.getNextQuestion();
                         this.addMessage('ai', nextQuestion);
+                        this.conversationHistory.push(
+                            { role: 'assistant', content: nextQuestion }
+                        );
                         this.speakResponse(nextQuestion);
                     }, 800);
                 } else {
+                    // Evaluation complete
                     this.conversationPhase = 'complete';
+                    this.micButton.disabled = true;
                 }
             }
         } catch (error) {
@@ -170,59 +181,19 @@ class SpeakEvalApp {
             "What are your career goals for the next 5 years?",
             "Discuss a recent trend in your industry."
         ];
-        return questions[this.evaluationStep - 1];
+        return questions[this.evaluationStep - 1] || "Please continue your response.";
     }
     
-    async getConversationResponse(userMessage) {
-        const messages = [
-            {
-                role: 'system',
-                content: `You are conducting an English evaluation. Respond conversationally to continue the assessment. 
-                Guidelines:
-                1. Keep responses under 20 words
-                2. Do NOT evaluate yet
-                3. Just acknowledge and ask the next question
-                4. Maintain professional tone`
-            },
-            {
-                role: 'user',
-                content: userMessage
-            }
-        ];
-        
-        return this.callAPI(messages);
-    }
-    
-    async getFinalEvaluation() {
-        const messages = [
-            {
-                role: 'system',
-                content: `Generate a comprehensive CEFR-aligned English evaluation report based on these responses:
-                ${JSON.stringify(this.userResponses)}
-                
-                Requirements:
-                1. Determine CEFR level (A1-C2) with confidence percentage
-                2. Evaluate these skills:
-                   - Pronunciation
-                   - Fluency
-                   - Grammar
-                   - Vocabulary
-                   - Discourse
-                3. Provide specific examples from their responses
-                4. Suggest 3 improvement areas
-                5. Format with markdown headings`
-            }
-        ];
-        
-        return this.callAPI(messages);
-    }
-    
-    async callAPI(messages) {
+    async callAPI(messages, evaluationStep, totalSteps) {
         try {
             const response = await fetch('/api/eval', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages })
+                body: JSON.stringify({ 
+                    messages,
+                    evaluationStep,
+                    totalSteps
+                })
             });
             
             if (!response.ok) {
@@ -266,29 +237,22 @@ class SpeakEvalApp {
             const audioUrl = URL.createObjectURL(audioBlob);
             const audio = new Audio(audioUrl);
             
-            // Handle audio playback with user interaction requirement
-            const playPromise = audio.play();
-            
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    audio.onended = () => {
-                        URL.revokeObjectURL(audioUrl);
-                        this.isSpeaking = false;
-                        if (this.audioQueue.length) {
-                            this.speakResponse(this.audioQueue.shift());
-                        }
-                    };
-                }).catch(error => {
-                    console.error('Playback prevented:', error);
-                    this.addSystemMessage('Please click the 🔊 icon to hear messages');
-                    URL.revokeObjectURL(audioUrl);
-                    this.isSpeaking = false;
-                });
-            }
+            audio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                this.isSpeaking = false;
+                if (this.audioQueue.length) {
+                    this.speakResponse(this.audioQueue.shift());
+                }
+            };
+
+            await audio.play().catch(error => {
+                console.error('Playback prevented:', error);
+                this.addSystemMessage('Please click the 🔊 icon to hear messages');
+                this.isSpeaking = false;
+            });
         } catch (error) {
             console.error('TTS Error:', error);
             this.isSpeaking = false;
-            this.addSystemMessage('Voice feature unavailable. Please click the 🔊 icon to hear messages.');
         }
     }
     
