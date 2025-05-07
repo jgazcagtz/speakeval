@@ -11,13 +11,6 @@ const CEFR_LEVELS = {
   C2: { min: 91, max: 100, desc: "Proficient user (mastery)" }
 };
 
-function formatCEFREvaluation(content) {
-  if (!content.includes('CEFR')) {
-    return `${content}\n\n**CEFR Reference:**\nA1-A2: Basic User\nB1-B2: Independent User\nC1-C2: Proficient User`;
-  }
-  return content;
-}
-
 export default async function handler(req) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -60,7 +53,7 @@ export default async function handler(req) {
     const content = data.choices[0]?.message?.content || 'No evaluation generated';
 
     return new Response(JSON.stringify({ 
-      message: formatCEFREvaluation(content) 
+      message: content
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
