@@ -73,8 +73,7 @@ class SpeakEvalApp {
         this.showTypingIndicator();
         
         try {
-            const prompt = this.getEvaluationPrompt();
-            const evaluation = await this.getAIResponse(prompt);
+            const evaluation = await this.getAIResponse(transcript);
             this.removeTypingIndicator();
             
             if (!evaluation || !evaluation.message) {
@@ -107,15 +106,15 @@ class SpeakEvalApp {
             "Discuss your future career goals and aspirations.",
             "Share your thoughts on a current trend in your industry."
         ];
-        
-        return {
-            role: 'user',
-            content: prompts[this.evaluationStep]
-        };
+        return prompts[this.evaluationStep];
     }
     
-    async getAIResponse(message) {
-        this.conversationHistory.push(message);
+    async getAIResponse(userMessage) {
+        // Add user message to conversation history
+        this.conversationHistory.push({
+            role: 'user',
+            content: userMessage
+        });
         
         try {
             const response = await fetch('/api/eval', {
@@ -140,6 +139,7 @@ class SpeakEvalApp {
                 throw new Error('Invalid response format');
             }
             
+            // Add AI response to conversation history
             this.conversationHistory.push({
                 role: 'assistant',
                 content: data.message
