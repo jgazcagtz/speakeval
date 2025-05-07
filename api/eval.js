@@ -11,6 +11,13 @@ const CEFR_LEVELS = {
   C2: { min: 91, max: 100, desc: "Proficient user (mastery)" }
 };
 
+function formatCEFREvaluation(content) {
+  if (!content.includes('CEFR')) {
+    return `${content}\n\n**CEFR Reference:**\nA1-A2: Basic User\nB1-B2: Independent User\nC1-C2: Proficient User`;
+  }
+  return content;
+}
+
 export default async function handler(req) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -21,7 +28,7 @@ export default async function handler(req) {
 
   try {
     const { messages } = await req.json();
-    
+
     // Validate input
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
@@ -29,14 +36,6 @@ export default async function handler(req) {
         headers: { 'Content-Type': 'application/json' },
       });
     }
-
-    const systemPrompt = messages[0].role === 'system' ? messages[0].content : `
-      You are an English proficiency evaluator. Analyze the conversation and:
-      1. Determine CEFR level (A1-C2)
-      2. Evaluate all language skills
-      3. Provide specific examples
-      4. Suggest improvements
-    `;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -46,23 +45,22 @@ export default async function handler(req) {
       },
       body: JSON.stringify({
         model: 'gpt-4-turbo',
-        messages: [{ role: 'system', content: systemPrompt }, ...messages.slice(1)],
-        temperature: 0.3,
-        max_tokens: 500,
-        response_format: { type: "text" }
+        messages,
+        temperature: 0.7,
+        max_tokens: 500
       })
     });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error?.message || 'Evaluation failed');
+      throw new Error(error.error?.message || 'API request failed');
     }
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content || 'No evaluation generated';
 
     return new Response(JSON.stringify({ 
-      message: this.formatCEFREvaluation(content) 
+      message: formatCEFREvaluation(content) 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -78,12 +76,4 @@ export default async function handler(req) {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-}
-
-function formatCEFREvaluation(content) {
-  // Add CEFR reference if not already present
-  if (!content.includes('CEFR')) {
-    return `${content}\n\n**CEFR Reference:**\nA1-A2: Basic User\nB1-B2: Independent User\nC1-C2: Proficient User`;
-  }
-  return content;
 }
