@@ -1,5 +1,6 @@
 class SpeakEvalApp {
     constructor() {
+        // DOM Elements
         this.chatWindow = document.getElementById('chat-window');
         this.micButton = document.getElementById('mic-button');
         this.micIcon = document.getElementById('mic-icon');
@@ -9,19 +10,24 @@ class SpeakEvalApp {
         this.progressFill = document.querySelector('.progress-fill');
         this.progressText = document.querySelector('.progress-text');
         
+        // Speech Recognition Setup
         this.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         this.recognition = null;
         this.isListening = false;
         this.isSpeaking = false;
         this.audioQueue = [];
+        
+        // Conversation State
         this.evaluationStep = 0;
         this.totalSteps = 5;
         this.conversationHistory = [];
+        this.conversationPhase = 'initial'; // 'initial' | 'evaluation' | 'complete'
         
         this.init();
     }
     
     init() {
+        // Event Listeners
         this.micButton.addEventListener('click', () => this.toggleSpeechRecognition());
         this.themeToggle.addEventListener('click', () => this.toggleTheme());
         
@@ -29,6 +35,7 @@ class SpeakEvalApp {
             btn.addEventListener('click', () => this.setLanguage(btn.dataset.lang));
         });
         
+        // Check for Speech Recognition Support
         if (!this.SpeechRecognition) {
             this.showUnsupportedMessage('Speech recognition not supported. Please use Chrome or Edge.');
             this.micButton.disabled = true;
@@ -37,6 +44,13 @@ class SpeakEvalApp {
         
         this.initSpeechRecognition();
         this.loadThemePreference();
+        this.startConversation();
+    }
+    
+    startConversation() {
+        const welcomeMessage = "Hello! I'm SpeakEval Pro. Let's begin your English evaluation. Please introduce yourself (your name, background, and experience).";
+        this.addMessage('ai', welcomeMessage);
+        this.speakResponse(welcomeMessage);
     }
     
     initSpeechRecognition() {
@@ -75,32 +89,35 @@ class SpeakEvalApp {
         this.showTypingIndicator();
         
         try {
+            // Transition to evaluation phase after first response
+            if (this.conversationPhase === 'initial') {
+                this.conversationPhase = 'evaluation';
+            }
+            
             const evaluation = await this.getAIResponse(transcript);
             this.removeTypingIndicator();
             
-            if (!evaluation || !evaluation.message) {
+            if (!evaluation?.message) {
                 throw new Error('Invalid evaluation response');
             }
             
-            this.evaluationStep++;
-            this.updateProgress();
-            
             this.addMessage('ai', evaluation.message);
-            
-            // Speak only the evaluation first
             await this.speakResponse(evaluation.message);
             
-            // Queue the next question to speak after evaluation finishes
-            if (this.evaluationStep < this.totalSteps) {
-                const nextQuestion = this.getNextQuestion();
-                this.audioQueue.push(nextQuestion);
+            if (this.conversationPhase === 'evaluation') {
+                this.evaluationStep++;
+                this.updateProgress();
                 
-                // Add the question to chat after a delay
-                setTimeout(() => {
-                    this.addMessage('ai', nextQuestion);
-                }, 1000);
-            } else {
-                this.completeEvaluation();
+                if (this.evaluationStep < this.totalSteps) {
+                    // Add delay before next question
+                    setTimeout(() => {
+                        const nextQuestion = this.getNextQuestion();
+                        this.addMessage('ai', nextQuestion);
+                        this.speakResponse(nextQuestion);
+                    }, 1000);
+                } else {
+                    this.completeEvaluation();
+                }
             }
         } catch (error) {
             console.error('Evaluation error:', error);
@@ -116,41 +133,43 @@ class SpeakEvalApp {
             "Please share your future career goals.",
             "Finally, discuss a current trend in your industry."
         ];
-        
-        if (this.evaluationStep <= questions.length) {
-            return questions[this.evaluationStep - 1];
-        }
-        return "Please continue with your response.";
+        return questions[this.evaluationStep - 1];
     }
     
     async getAIResponse(userMessage) {
+        const systemPrompt = this.conversationPhase === 'initial'
+            ? "You are SpeakEval Pro, an AI English speaking assessment tool. Welcome the user and ask them to introduce themselves."
+            : `You are SpeakEval Pro evaluating English speaking skills. Provide feedback on:
+              1. Pronunciation (0-10)
+              2. Fluency (0-10) 
+              3. Grammar (0-10)
+              4. Vocabulary (0-10)
+              5. Comprehension (0-10)
+              Then continue the evaluation.`;
+        
         this.conversationHistory.push({
             role: 'user',
             content: userMessage
         });
         
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            ...this.conversationHistory
+        ];
+        
         try {
             const response = await fetch('/api/eval', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    messages: this.conversationHistory
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages })
             });
             
             if (!response.ok) {
                 const errorData = await response.json();
-                console.error('API Error:', errorData);
                 throw new Error(errorData.error || 'Evaluation failed');
             }
             
             const data = await response.json();
-            
-            if (!data.message) {
-                throw new Error('Invalid response format');
-            }
             
             this.conversationHistory.push({
                 role: 'assistant',
@@ -159,7 +178,7 @@ class SpeakEvalApp {
             
             return data;
         } catch (error) {
-            console.error('Error fetching AI response:', error);
+            console.error('API Error:', error);
             throw error;
         }
     }
@@ -174,21 +193,16 @@ class SpeakEvalApp {
         
         this.isSpeaking = true;
         try {
-            const voice = this.voiceSelect.value || 'nova';
             const response = await fetch('/api/speak', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     text,
-                    voice 
+                    voice: this.voiceSelect.value || 'nova'
                 })
             });
 
-            if (!response.ok) {
-                throw new Error('TTS request failed');
-            }
+            if (!response.ok) throw new Error('TTS request failed');
 
             const audioBlob = await response.blob();
             const audioUrl = URL.createObjectURL(audioBlob);
@@ -198,55 +212,36 @@ class SpeakEvalApp {
                 URL.revokeObjectURL(audioUrl);
                 this.isSpeaking = false;
                 
-                // Process next in queue
+                // Process next in queue if exists
                 if (this.audioQueue.length > 0) {
-                    const nextText = this.audioQueue.shift();
-                    this.speakResponse(nextText);
+                    this.speakResponse(this.audioQueue.shift());
                 }
             };
             
             await audio.play();
-            
         } catch (error) {
-            console.error('Error with TTS:', error);
+            console.error('TTS Error:', error);
             this.isSpeaking = false;
             this.addSystemMessage('Voice feature unavailable. Please check connection.');
         }
     }
     
     completeEvaluation() {
-        const completionMessage = "Evaluation complete! Generating final report...";
-        this.addMessage('ai', completionMessage);
-        this.speakResponse(completionMessage);
-        
-        setTimeout(() => {
-            const report = this.generateFinalReport();
-            this.addMessage('ai', report);
-            this.speakResponse(report);
-        }, 2000);
-    }
-    
-    generateFinalReport() {
-        return `📊 Final Evaluation Report:
+        this.conversationPhase = 'complete';
+        const report = `📊 Evaluation Complete!
         
         Pronunciation: 8/10
-        Fluency: 7/10
+        Fluency: 7/10  
         Grammar: 9/10
         Vocabulary: 8/10
         Comprehension: 9/10
         
-        Overall Score: 41/50 (Advanced)
+        Overall: 41/50 (Advanced)`;
         
-        Strengths:
-        - Excellent grammar accuracy
-        - Good vocabulary range
-        - Strong comprehension
-        
-        Areas for Improvement:
-        - Work on fluency (few hesitations noted)
-        - Practice some vowel sounds
-        
-        Recommendation: Suitable for professional English communication.`;
+        setTimeout(() => {
+            this.addMessage('ai', report);
+            this.speakResponse(report);
+        }, 1500);
     }
     
     updateProgress() {
@@ -279,8 +274,9 @@ class SpeakEvalApp {
         this.chatWindow.scrollTop = this.chatWindow.scrollHeight;
         
         if (sender === 'ai') {
-            const speakButton = messageElement.querySelector('.speak-button');
-            speakButton.addEventListener('click', () => this.speakResponse(content));
+            messageElement.querySelector('.speak-button').addEventListener('click', () => {
+                this.speakResponse(content);
+            });
         }
     }
     
