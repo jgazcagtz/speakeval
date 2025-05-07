@@ -13,42 +13,28 @@ export default async function handler(req) {
   try {
     const { messages } = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: 'Invalid messages array' }), {
+    // Validate messages structure
+    if (!Array.isArray(messages)) {
+      return new Response(JSON.stringify({ error: 'Messages must be an array' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    const evaluationCriteria = `You are SpeakEval Pro, an AI English speaking assessment tool. Evaluate the user's spoken English based on:
-    1. Pronunciation (0-10)
-    2. Fluency (0-10)
-    3. Grammar Accuracy (0-10)
-    4. Vocabulary Range (0-10)
-    5. Comprehension (0-10)
-    
-    Provide:
-    - Immediate feedback on each response
-    - Overall score (0-50)
-    - Detailed analysis
-    - Suggestions for improvement
-    
-    Evaluation language: English
-    Be professional but encouraging`;
-
-    // Ensure all messages have string content
-    const formattedMessages = messages.map(msg => ({
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-    }));
-
-    const conversationHistory = [
-      {
-        role: 'system',
-        content: evaluationCriteria
-      },
-      ...formattedMessages
-    ];
+    // Validate each message
+    for (const [i, msg] of messages.entries()) {
+      if (!msg || typeof msg !== 'object' || 
+          typeof msg.role !== 'string' || 
+          typeof msg.content !== 'string') {
+        return new Response(JSON.stringify({ 
+          error: `Invalid message at index ${i}`,
+          details: 'Each message must have role (string) and content (string)'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -58,44 +44,37 @@ export default async function handler(req) {
       },
       body: JSON.stringify({
         model: 'gpt-4-turbo',
-        messages: conversationHistory,
-        temperature: 0.5,
-        max_tokens: 300
+        messages,
+        temperature: 0.7,
+        max_tokens: 300,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.5
       })
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API Error:', errorData);
-      throw new Error(errorData.error?.message || 'Evaluation failed');
+      const error = await response.json();
+      console.error('OpenAI API Error:', error);
+      throw new Error(error.error?.message || 'API request failed');
     }
 
     const data = await response.json();
-    const aiMessage = data.choices[0]?.message?.content;
-
-    if (!aiMessage) {
-      throw new Error('No evaluation response from AI');
-    }
+    const aiMessage = data.choices[0]?.message?.content || 'No response generated';
 
     return new Response(JSON.stringify({ 
-      message: aiMessage,
-      evaluationData: aiMessage
+      message: aiMessage
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
-
   } catch (error) {
     console.error('Evaluation Error:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Failed to generate evaluation',
-        details: error.message 
-      }), 
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify({ 
+      error: 'Evaluation failed',
+      details: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
