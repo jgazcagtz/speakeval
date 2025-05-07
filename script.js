@@ -30,6 +30,7 @@ class SpeakEvalApp {
         if (!this.SpeechRecognition) {
             this.showUnsupportedMessage('Speech recognition not supported. Please use Chrome or Edge.');
             this.micButton.disabled = true;
+            return;
         }
         
         this.initSpeechRecognition();
@@ -76,6 +77,10 @@ class SpeakEvalApp {
             const evaluation = await this.getAIResponse(prompt);
             this.removeTypingIndicator();
             
+            if (!evaluation || !evaluation.message) {
+                throw new Error('Invalid evaluation response');
+            }
+            
             this.evaluationStep++;
             this.updateProgress();
             
@@ -104,9 +109,80 @@ class SpeakEvalApp {
         ];
         
         return {
-            role: 'system',
-            content: `Ask the candidate to: ${prompts[this.evaluationStep]}\n\nEvaluate their response based on pronunciation, fluency, grammar, vocabulary, and comprehension. Provide specific feedback and a score (1-10) for each category.`
+            role: 'user',
+            content: prompts[this.evaluationStep]
         };
+    }
+    
+    async getAIResponse(message) {
+        this.conversationHistory.push(message);
+        
+        try {
+            const response = await fetch('/api/eval', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messages: this.conversationHistory
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('API Error:', errorData);
+                throw new Error(errorData.error || 'Evaluation failed');
+            }
+            
+            const data = await response.json();
+            
+            if (!data.message) {
+                throw new Error('Invalid response format');
+            }
+            
+            this.conversationHistory.push({
+                role: 'assistant',
+                content: data.message
+            });
+            
+            return data;
+        } catch (error) {
+            console.error('Error fetching AI response:', error);
+            throw error;
+        }
+    }
+    
+    async speakResponse(text) {
+        if (!text) return;
+        
+        try {
+            const voice = this.voiceSelect.value || 'nova';
+            const response = await fetch('/api/speak', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    text,
+                    voice 
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('TTS request failed');
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            
+            audio.onended = () => URL.revokeObjectURL(audioUrl);
+            await audio.play();
+            
+        } catch (error) {
+            console.error('Error with TTS:', error);
+            this.addSystemMessage('Voice feature unavailable. Please check connection.');
+        }
     }
     
     promptNextQuestion() {
@@ -118,8 +194,9 @@ class SpeakEvalApp {
         ];
         
         if (this.evaluationStep < questions.length) {
-            this.addMessage('ai', questions[this.evaluationStep - 1]);
-            this.speakResponse(questions[this.evaluationStep - 1]);
+            const nextQuestion = questions[this.evaluationStep - 1];
+            this.addMessage('ai', nextQuestion);
+            this.speakResponse(nextQuestion);
         }
     }
     
@@ -128,7 +205,6 @@ class SpeakEvalApp {
         this.addMessage('ai', completionMessage);
         this.speakResponse(completionMessage);
         
-        // Generate final report
         setTimeout(() => {
             const report = this.generateFinalReport();
             this.addMessage('ai', report);
@@ -166,73 +242,6 @@ class SpeakEvalApp {
         
         if (percent >= 100) {
             this.progressBar.classList.add('complete');
-        }
-    }
-    
-    async getAIResponse(message) {
-        this.conversationHistory.push({
-            role: 'user',
-            content: message,
-            timestamp: new Date().toISOString()
-        });
-        
-        try {
-            const response = await fetch('/api/eval', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    messages: this.conversationHistory,
-                    model: 'gpt-4-turbo'
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`API request failed with status ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            this.conversationHistory.push({
-                role: 'assistant',
-                content: data.message,
-                timestamp: new Date().toISOString()
-            });
-            
-            return data;
-        } catch (error) {
-            console.error('Error fetching AI response:', error);
-            throw error;
-        }
-    }
-    
-    async speakResponse(text) {
-        try {
-            const voice = this.voiceSelect.value || 'nova';
-            const response = await fetch('/api/speak', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    text,
-                    voice 
-                })
-            });
-
-            if (!response.ok) throw new Error('TTS request failed');
-
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            
-            audio.onended = () => URL.revokeObjectURL(audioUrl);
-            audio.play();
-            
-        } catch (error) {
-            console.error('Error with TTS:', error);
-            this.addSystemMessage('Voice feature unavailable. Please check connection.');
         }
     }
     
@@ -322,7 +331,6 @@ class SpeakEvalApp {
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.lang === lang);
         });
-        // Add language switching logic here
     }
     
     showUnsupportedMessage(message) {
