@@ -2,6 +2,15 @@ export const config = {
   runtime: 'edge',
 };
 
+const CEFR_LEVELS = {
+  A1: { min: 0, max: 20, desc: "Basic user (beginner)" },
+  A2: { min: 21, max: 40, desc: "Basic user (elementary)" },
+  B1: { min: 41, max: 60, desc: "Independent user (intermediate)" },
+  B2: { min: 61, max: 80, desc: "Independent user (upper intermediate)" },
+  C1: { min: 81, max: 90, desc: "Proficient user (advanced)" },
+  C2: { min: 91, max: 100, desc: "Proficient user (mastery)" }
+};
+
 export default async function handler(req) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -12,29 +21,22 @@ export default async function handler(req) {
 
   try {
     const { messages } = await req.json();
-
-    // Validate messages structure
-    if (!Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: 'Messages must be an array' }), {
+    
+    // Validate input
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Validate each message
-    for (const [i, msg] of messages.entries()) {
-      if (!msg || typeof msg !== 'object' || 
-          typeof msg.role !== 'string' || 
-          typeof msg.content !== 'string') {
-        return new Response(JSON.stringify({ 
-          error: `Invalid message at index ${i}`,
-          details: 'Each message must have role (string) and content (string)'
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-    }
+    const systemPrompt = messages[0].role === 'system' ? messages[0].content : `
+      You are an English proficiency evaluator. Analyze the conversation and:
+      1. Determine CEFR level (A1-C2)
+      2. Evaluate all language skills
+      3. Provide specific examples
+      4. Suggest improvements
+    `;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -44,29 +46,28 @@ export default async function handler(req) {
       },
       body: JSON.stringify({
         model: 'gpt-4-turbo',
-        messages,
-        temperature: 0.7,
-        max_tokens: 300,
-        frequency_penalty: 0.5,
-        presence_penalty: 0.5
+        messages: [{ role: 'system', content: systemPrompt }, ...messages.slice(1)],
+        temperature: 0.3,
+        max_tokens: 500,
+        response_format: { type: "text" }
       })
     });
 
     if (!response.ok) {
       const error = await response.json();
-      console.error('OpenAI API Error:', error);
-      throw new Error(error.error?.message || 'API request failed');
+      throw new Error(error.error?.message || 'Evaluation failed');
     }
 
     const data = await response.json();
-    const aiMessage = data.choices[0]?.message?.content || 'No response generated';
+    const content = data.choices[0]?.message?.content || 'No evaluation generated';
 
     return new Response(JSON.stringify({ 
-      message: aiMessage
+      message: this.formatCEFREvaluation(content) 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
     console.error('Evaluation Error:', error);
     return new Response(JSON.stringify({ 
@@ -77,4 +78,12 @@ export default async function handler(req) {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+}
+
+function formatCEFREvaluation(content) {
+  // Add CEFR reference if not already present
+  if (!content.includes('CEFR')) {
+    return `${content}\n\n**CEFR Reference:**\nA1-A2: Basic User\nB1-B2: Independent User\nC1-C2: Proficient User`;
+  }
+  return content;
 }
