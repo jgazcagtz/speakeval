@@ -36,12 +36,18 @@ export default async function handler(req) {
     Evaluation language: English
     Be professional but encouraging`;
 
+    // Ensure all messages have string content
+    const formattedMessages = messages.map(msg => ({
+      role: msg.role,
+      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+    }));
+
     const conversationHistory = [
       {
         role: 'system',
         content: evaluationCriteria
       },
-      ...messages
+      ...formattedMessages
     ];
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
