@@ -11,7 +11,7 @@ export default async function handler(req) {
   }
 
   try {
-    const { messages, model = 'gpt-4-turbo' } = await req.json();
+    const { messages } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(JSON.stringify({ error: 'Invalid messages array' }), {
@@ -39,7 +39,7 @@ export default async function handler(req) {
     const conversationHistory = [
       {
         role: 'system',
-        content: `${evaluationCriteria}\nCurrent time: ${new Date().toLocaleString()}`
+        content: evaluationCriteria
       },
       ...messages
     ];
@@ -51,39 +51,39 @@ export default async function handler(req) {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model,
+        model: 'gpt-4-turbo',
         messages: conversationHistory,
         temperature: 0.5,
-        max_tokens: 300,
-        frequency_penalty: 0.3,
-        presence_penalty: 0.3
+        max_tokens: 300
       })
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || 'Evaluation failed');
+      const errorData = await response.json();
+      console.error('OpenAI API Error:', errorData);
+      throw new Error(errorData.error?.message || 'Evaluation failed');
     }
 
     const data = await response.json();
     const aiMessage = data.choices[0]?.message?.content;
 
     if (!aiMessage) {
-      throw new Error('No evaluation response');
+      throw new Error('No evaluation response from AI');
     }
 
     return new Response(JSON.stringify({ 
       message: aiMessage,
-      evaluationData: aiMessage // Will be expanded with structured data later
+      evaluationData: aiMessage
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
     console.error('Evaluation Error:', error);
     return new Response(
       JSON.stringify({ 
-        error: 'Evaluation failed',
+        error: 'Failed to generate evaluation',
         details: error.message 
       }), 
       {
