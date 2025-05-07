@@ -12,6 +12,8 @@ class SpeakEvalApp {
         this.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         this.recognition = null;
         this.isListening = false;
+        this.isSpeaking = false;
+        this.audioQueue = [];
         this.evaluationStep = 0;
         this.totalSteps = 5;
         this.conversationHistory = [];
@@ -84,10 +86,19 @@ class SpeakEvalApp {
             this.updateProgress();
             
             this.addMessage('ai', evaluation.message);
+            
+            // Speak only the evaluation first
             await this.speakResponse(evaluation.message);
             
+            // Queue the next question to speak after evaluation finishes
             if (this.evaluationStep < this.totalSteps) {
-                this.promptNextQuestion();
+                const nextQuestion = this.getNextQuestion();
+                this.audioQueue.push(nextQuestion);
+                
+                // Add the question to chat after a delay
+                setTimeout(() => {
+                    this.addMessage('ai', nextQuestion);
+                }, 1000);
             } else {
                 this.completeEvaluation();
             }
@@ -98,19 +109,21 @@ class SpeakEvalApp {
         }
     }
     
-    getEvaluationPrompt() {
-        const prompts = [
-            "Please introduce yourself in English (name, background, experience).",
-            "Describe your current or most recent job responsibilities in detail.",
-            "Explain a professional challenge you faced and how you handled it.",
-            "Discuss your future career goals and aspirations.",
-            "Share your thoughts on a current trend in your industry."
+    getNextQuestion() {
+        const questions = [
+            "Now, please describe your current or most recent job responsibilities.",
+            "Next, tell me about a professional challenge you faced.",
+            "Please share your future career goals.",
+            "Finally, discuss a current trend in your industry."
         ];
-        return prompts[this.evaluationStep];
+        
+        if (this.evaluationStep <= questions.length) {
+            return questions[this.evaluationStep - 1];
+        }
+        return "Please continue with your response.";
     }
     
     async getAIResponse(userMessage) {
-        // Add user message to conversation history
         this.conversationHistory.push({
             role: 'user',
             content: userMessage
@@ -139,7 +152,6 @@ class SpeakEvalApp {
                 throw new Error('Invalid response format');
             }
             
-            // Add AI response to conversation history
             this.conversationHistory.push({
                 role: 'assistant',
                 content: data.message
@@ -155,6 +167,12 @@ class SpeakEvalApp {
     async speakResponse(text) {
         if (!text) return;
         
+        if (this.isSpeaking) {
+            this.audioQueue.push(text);
+            return;
+        }
+        
+        this.isSpeaking = true;
         try {
             const voice = this.voiceSelect.value || 'nova';
             const response = await fetch('/api/speak', {
@@ -176,27 +194,23 @@ class SpeakEvalApp {
             const audioUrl = URL.createObjectURL(audioBlob);
             const audio = new Audio(audioUrl);
             
-            audio.onended = () => URL.revokeObjectURL(audioUrl);
+            audio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                this.isSpeaking = false;
+                
+                // Process next in queue
+                if (this.audioQueue.length > 0) {
+                    const nextText = this.audioQueue.shift();
+                    this.speakResponse(nextText);
+                }
+            };
+            
             await audio.play();
             
         } catch (error) {
             console.error('Error with TTS:', error);
+            this.isSpeaking = false;
             this.addSystemMessage('Voice feature unavailable. Please check connection.');
-        }
-    }
-    
-    promptNextQuestion() {
-        const questions = [
-            "Now, please describe your current or most recent job responsibilities.",
-            "Next, tell me about a professional challenge you faced.",
-            "Please share your future career goals.",
-            "Finally, discuss a current trend in your industry."
-        ];
-        
-        if (this.evaluationStep < questions.length) {
-            const nextQuestion = questions[this.evaluationStep - 1];
-            this.addMessage('ai', nextQuestion);
-            this.speakResponse(nextQuestion);
         }
     }
     
