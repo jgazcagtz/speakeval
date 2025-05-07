@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>SpeakEval | AI-Powered English Speaking Assessment</title>
+  <link rel="stylesheet" href="./style.css">
+
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4F46E5">
+    <title>SpeakEval Pro | AI English Speaking Assessment</title>
+    <meta name="description" content="Professional English speaking evaluation tool with AI assessment">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <div class="particles"></div>
+        
+        <header class="app-header">
+            <div class="logo-container">
+                <h1 class="logo-text">SpeakEval Pro</h1>
+                <span class="tagline">AI English Speaking Assessment</span>
+            </div>
+            <div class="header-controls">
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <div class="language-toggle">
+                    <button class="lang-btn active" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="es">ES</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="eval-container"><br>
+            <div id="progress-bar" class="progress-bar">
+                <div class="progress-fill"></div>
+                <div class="progress-text">Evaluation Progress: 0%</div>
+            </div>
+            
+            <div id="chat-window" class="chat-window">
+                <div class="message ai-message animate__animated animate__fadeIn">
+                    <div class="message-content">
+                        <p>Welcome to SpeakEval Pro! I'll assess your English speaking skills.</p>
+                        <p>Please speak naturally when you see the microphone icon. I'll evaluate:</p>
+                        <ul class="criteria-list">
+                            <li>Pronunciation</li>
+                            <li>Fluency</li>
+                            <li>Grammar</li>
+                            <li>Vocabulary</li>
+                            <li>Comprehension</li>
+                        </ul>
+                        <p class="tech-badge">Professional Assessment Mode</p>
+                    </div>
+                    <div class="message-meta">
+                        <span class="timestamp">Ready</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="eval-controls">
+                <div class="mic-container">
+                    <button id="mic-button" class="mic-button" aria-label="Start speaking">
+                        <svg id="mic-icon" viewBox="0 0 24 24" width="24" height="24" class="mic-svg">
+                            <path fill="currentColor" d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zm7 9a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-2 0 7 7 0 0 0 6 6.92V20H8a1 1 0 0 0 0 2h8a1 1 0 0 0 0-2h-3v-2.08A7 7 0 0 0 19 11z"></path>
+                        </svg>
+                        <div class="mic-pulse"></div>
+                        <span class="mic-label">Press to Speak</span>
+                    </button>
+                </div><br>
+                <div class="voice-controls">
+                    <select id="voice-select" class="voice-select">
+                        <option value="nova">Nova (Recommended)</option>
+                        <option value="shimmer">Shimmer</option>
+                        <option value="echo">Echo</option>
+                        <option value="alloy">Alloy</option>
+                        <option value="fable">Fable</option>
+                        <option value="onyx">Onyx</option>
+                    </select>
+                </div>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <div class="tech-stack">
+                <span class="tech-item">AI Evaluation</span>
+                <span class="tech-item">Professional Scoring</span>
+                <span class="tech-item">Detailed Feedback</span>
+            </div>
+            <p class="copyright">© 2025 SpeakEval Pro | AI Language Assessment</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+<!-- partial -->
+  <script  src="./script.js"></script>
+
+</body>
+</html>
