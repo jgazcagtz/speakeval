@@ -16,6 +16,7 @@ class SpeakEvalApp {
         this.isListening = false;
         this.isSpeaking = false;
         this.audioQueue = [];
+        this.audioContextAllowed = false;
         
         // Evaluation State
         this.evaluationStep = 0;
@@ -46,6 +47,26 @@ class SpeakEvalApp {
         this.initSpeechRecognition();
         this.loadThemePreference();
         this.startConversation();
+    }
+    
+    async initializeAudioContext() {
+        return new Promise((resolve) => {
+            const handleUserInteraction = () => {
+                document.removeEventListener('click', handleUserInteraction);
+                document.removeEventListener('keydown', handleUserInteraction);
+                resolve();
+            };
+            
+            document.addEventListener('click', handleUserInteraction);
+            document.addEventListener('keydown', handleUserInteraction);
+            
+            // Show instruction if no interaction after 3 seconds
+            setTimeout(() => {
+                if (!this.audioContextAllowed) {
+                    this.addSystemMessage('Please interact with the page (click/tap) to enable voice features');
+                }
+            }, 3000);
+        });
     }
     
     startConversation() {
@@ -91,6 +112,12 @@ class SpeakEvalApp {
         this.showTypingIndicator();
         
         try {
+            // Initialize audio context on first interaction
+            if (!this.audioContextAllowed) {
+                await this.initializeAudioContext();
+                this.audioContextAllowed = true;
+            }
+            
             // Transition to evaluation phase after first response
             if (this.conversationPhase === 'initial') {
                 this.conversationPhase = 'evaluation';
@@ -212,13 +239,16 @@ class SpeakEvalApp {
     }
     
     async speakResponse(text) {
-        if (!text) return;
-        
+        if (!text || !this.audioContextAllowed) {
+            if (text) this.audioQueue.push(text);
+            return;
+        }
+
         if (this.isSpeaking) {
             this.audioQueue.push(text);
             return;
         }
-        
+
         this.isSpeaking = true;
         try {
             const response = await fetch('/api/speak', {
@@ -230,29 +260,35 @@ class SpeakEvalApp {
                 })
             });
 
-            if (!response.ok) {
-                throw new Error('TTS request failed');
-            }
+            if (!response.ok) throw new Error('TTS request failed');
 
             const audioBlob = await response.blob();
             const audioUrl = URL.createObjectURL(audioBlob);
             const audio = new Audio(audioUrl);
             
-            audio.onended = () => {
-                URL.revokeObjectURL(audioUrl);
-                this.isSpeaking = false;
-                
-                // Process next in queue if exists
-                if (this.audioQueue.length > 0) {
-                    this.speakResponse(this.audioQueue.shift());
-                }
-            };
+            // Handle audio playback with user interaction requirement
+            const playPromise = audio.play();
             
-            await audio.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        this.isSpeaking = false;
+                        if (this.audioQueue.length) {
+                            this.speakResponse(this.audioQueue.shift());
+                        }
+                    };
+                }).catch(error => {
+                    console.error('Playback prevented:', error);
+                    this.addSystemMessage('Please click the 🔊 icon to hear messages');
+                    URL.revokeObjectURL(audioUrl);
+                    this.isSpeaking = false;
+                });
+            }
         } catch (error) {
             console.error('TTS Error:', error);
             this.isSpeaking = false;
-            this.addSystemMessage('Voice feature unavailable. Please check connection.');
+            this.addSystemMessage('Voice feature unavailable. Please click the 🔊 icon to hear messages.');
         }
     }
     
